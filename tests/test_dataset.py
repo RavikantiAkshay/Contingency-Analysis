@@ -8,6 +8,9 @@ from src.dataset.build_dataset import build_dataset
 from src.dataset.validate_dataset import validate_dataset
 
 
+import tempfile
+
+
 def test_build_and_validate_small_dataset():
     cfg = get_config()
     mpc, meta = load_network()
@@ -18,9 +21,11 @@ def test_build_and_validate_small_dataset():
     # Total expected cases: 2 scenarios * (1 base + 20 lines) = 42 cases
     assert len(all_results) == 42, f"Expected 42 cases, got {len(all_results)}"
 
-    dataset = build_dataset(all_results, cfg, filename='test_master_dataset.csv')
-    assert dataset.shape[0] == 42, f"Expected 42 rows in dataset, got {dataset.shape[0]}"
-    assert dataset.shape[1] == 63, f"Expected 63 columns per refined schema, got {dataset.shape[1]}"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dataset = build_dataset(all_results, cfg, filename='test_master_dataset.csv', output_dir=tmpdir)
+        assert dataset.shape[0] == 42, f"Expected 42 rows in dataset, got {dataset.shape[0]}"
+        assert dataset.shape[1] == 63, f"Expected 63 columns per refined schema, got {dataset.shape[1]}"
 
-    is_valid, report = validate_dataset(dataset, meta, cfg)
-    assert is_valid, f"Dataset validation failed: {report['errors']}"
+        is_valid, report = validate_dataset(dataset, meta, cfg)
+        assert is_valid, f"Dataset validation failed: {report['errors']}"
+

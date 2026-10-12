@@ -2,7 +2,7 @@
 EEQ401 — MASTER TRAINING SCRIPT: DEEP Q-NETWORK (DQN) ON NEW 100k SAMPLES (GPU-ACCELERATED)
 
 Trains a fresh DQN Agent from scratch on the new dataset samples alone (IEEE 14-bus, 20 N-1 contingencies per scenario).
-Utilizes the high-memory GPU (48GB NVIDIA RTX A6000) for tensor acceleration and batch training.
+Utilizes the high-memory GPU for tensor acceleration and batch training.
 
 Architecture:
   Input: 77-D continuous grid state (voltages, angles, loadings, generator MW, line outage mask, summaries)
@@ -28,6 +28,13 @@ import torch
 # Ensure local imports work cleanly
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+# Ensure standard UTF-8 console output on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from config.config import get_config
 from src.dataset.scenario_pool import load_scenario_pool
 from src.rl.environment import ContingencyRLEnv
@@ -40,14 +47,15 @@ from src.contingency.apply_contingency import apply_contingency
 from src.simulation.run_load_flow import run_load_flow
 from src.results.extract_results import extract_results
 from src.labeling.classify_security import classify_security
+from src.rl.classifier_integration import SecurityClassifierPredictor
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train DQN on New Samples using GPU")
     parser.add_argument("--pool-path", type=str, default="data/tabular/dataset_100k/dataset_100k_pool.json",
                         help="Path to new samples pool JSON")
-    parser.add_argument("--episodes", type=int, default=25000,
-                        help="Number of training episodes")
+    parser.add_argument("--episodes", type=int, default=80000,
+                        help="Number of training episodes (default: 80,000)")
     parser.add_argument("--batch-size", type=int, default=128,
                         help="Mini-batch size for GPU training")
     parser.add_argument("--buffer-capacity", type=int, default=100000,
@@ -57,11 +65,21 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.95,
                         help="Discount factor")
     parser.add_argument("--train-scenarios", type=int, default=4000,
-                        help="Number of scenarios to use for training (out of 5000)")
-    parser.add_argument("--eval-scenarios", type=int, default=100,
-                        help="Number of held-out test scenarios to evaluate after training")
-    parser.add_argument("--save-dir", type=str, default="models",
+                        help="Number of scenarios to use for training (out of 5000, 4000 = 80k cases)")
+    parser.add_argument("--eval-scenarios", type=int, default=1000,
+                        help="Number of held-out test scenarios to evaluate after training (default: 1000 = 20k cases)")
+    parser.add_argument("--checkpoint-freq", type=int, default=10000,
+                        help="Frequency of intermediate checkpoint saves in episodes (default: 10000)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
+    parser.add_argument("--save-dir", type=str, default="models/new_samples_dqn",
                         help="Directory to save model checkpoints and logs")
+    parser.add_argument("--classifier-path", type=str, default="models/classifier_100k/grid_security_classifier.pt",
+                        help="Path to trained security classifier weights")
+    parser.add_argument("--scaler-path", type=str, default="models/classifier_100k/scaler_params.json",
+                        help="Path to scaler parameters JSON")
+    parser.add_argument("--skip-train", action="store_true",
+                        help="Skip training and run evaluation directly on existing checkpoint")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu",
                         help="Device to train on (cuda or cpu)")
     return parser.parse_args()
@@ -92,10 +110,14 @@ def main():
     cfg = get_config()
     os.makedirs(args.save_dir, exist_ok=True)
 
-    print("\n" + "█" * 70)
-    print("  EEQ401 — DQN TRAINING FROM SCRATCH ON NEW SAMPLES (48GB GPU)")
-    print("█" * 70)
+    print("\n" + "=" * 70)
+    print("  EEQ401: DQN TRAINING & BENCHMARK ON 100k DATASET")
+    print("=" * 70)
     print_gpu_info(args.device)
+
+    # Set seeds for reproducibility
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     # -------------------------------------------------------------------------
     # STAGE 1: LOAD NEW SAMPLES SCENARIO POOL
@@ -111,7 +133,7 @@ def main():
     total_cases = total_scenarios * cases_per_sc
     print(f"  [+] Successfully loaded {total_scenarios} scenarios ({total_cases:,} total contingency cases) in {time.time() - t0:.2f}s")
 
-    # Partition scenarios into Train and Test
+    # Partition scenarios sequentially (80% train = 4,000 scenarios, 20% test = 1,000 scenarios)
     num_train = min(args.train_scenarios, total_scenarios)
     train_indices = list(range(0, num_train))
     test_indices = list(range(num_train, min(num_train + args.eval_scenarios, total_scenarios)))
@@ -120,9 +142,9 @@ def main():
     print(f"  [+] Test Scenarios:   {len(test_indices):,} ({len(test_indices)*cases_per_sc:,} cases)")
 
     # -------------------------------------------------------------------------
-    # STAGE 2: INITIALIZE DQN AGENT FROM SCRATCH
+    # STAGE 2: INITIALIZE DQN AGENT
     # -------------------------------------------------------------------------
-    print(f"\n[STAGE 2/4] Initializing Fresh Deep Q-Network Agent on {args.device}...")
+    print(f"\n[STAGE 2/4] Initializing Deep Q-Network Agent on {args.device}...")
     agent = DQNAgent(
         state_dim=77,
         num_actions=NUM_ACTIONS,
@@ -137,82 +159,127 @@ def main():
         device=args.device,
     )
 
-    env = ContingencyRLEnv(
-        scenario_pool=pool,
-        cfg=cfg,
-        scenario_indices=train_indices,
-        skip_base_cases=True,
-    )
+    model_weights_path = os.path.join(args.save_dir, 'dqn_agent_new_samples.pt')
 
     # -------------------------------------------------------------------------
     # STAGE 3: TRAINING LOOP
     # -------------------------------------------------------------------------
-    print(f"\n[STAGE 3/4] Training for {args.episodes:,} Episodes (Batch Size={args.batch_size})...")
-    t_train_start = time.time()
+    total_train_time = 0.0
+    if not args.skip_train:
+        env = ContingencyRLEnv(
+            scenario_pool=pool,
+            cfg=cfg,
+            scenario_indices=train_indices,
+            skip_base_cases=True,
+        )
 
-    episode_rewards = []
-    episode_labels = []
-    recent_losses = []
-    history_log = []
+        print(f"\n[STAGE 3/4] Training for {args.episodes:,} Episodes (Batch Size={args.batch_size})...")
+        t_train_start = time.time()
 
-    pbar = tqdm(range(args.episodes), desc="  DQN Training (GPU)", unit="ep")
+        episode_rewards = []
+        episode_labels = []
+        recent_losses = []
+        history_log = []
 
-    for ep in pbar:
-        obs, info = env.reset()
-        action = agent.select_action(obs, info, training=True)
-        next_obs, reward, terminated, truncated, step_info = env.step(action)
+        pbar = tqdm(range(args.episodes), desc="  DQN Training (GPU)", unit="ep")
 
-        agent.store_transition(obs, action, reward, next_obs, terminated)
-        loss = agent.train_step()
-        agent.update_epsilon(ep)
+        for ep in pbar:
+            obs, info = env.reset()
+            action = agent.select_action(obs, info, training=True)
+            next_obs, reward, terminated, truncated, step_info = env.step(action)
 
-        episode_rewards.append(reward)
-        post_label = step_info['post_label']
-        episode_labels.append(post_label)
-        if loss is not None:
-            recent_losses.append(loss)
+            agent.store_transition(obs, action, reward, next_obs, terminated)
+            loss = agent.train_step()
+            agent.update_epsilon(ep)
 
-        # Log and progress updates
-        if (ep + 1) % 50 == 0 or ep == args.episodes - 1:
-            recent_w = episode_rewards[-100:]
-            recent_safe = sum(1 for l in episode_labels[-100:] if l == 'Safe')
-            avg_loss = float(np.mean(recent_losses[-50:])) if recent_losses else 0.0
+            episode_rewards.append(reward)
+            post_label = step_info['post_label']
+            episode_labels.append(post_label)
+            if loss is not None:
+                recent_losses.append(loss)
 
-            pbar.set_postfix({
-                'eps': f"{agent.epsilon:.2f}",
-                'AvgRew': f"{np.mean(recent_w):.1f}",
-                'Safe%': f"{100*recent_safe/len(recent_w):.0f}%",
-                'Loss': f"{avg_loss:.3f}",
-                'Mem': f"{len(agent.memory):,}",
-            })
+            # Log and progress updates
+            if (ep + 1) % 50 == 0 or ep == args.episodes - 1:
+                recent_w = episode_rewards[-100:]
+                recent_safe = sum(1 for l in episode_labels[-100:] if l == 'Safe')
+                avg_loss = float(np.mean(recent_losses[-50:])) if recent_losses else 0.0
 
-            history_log.append({
-                'episode': ep + 1,
-                'epsilon': round(float(agent.epsilon), 4),
-                'avg_reward_100': round(float(np.mean(recent_w)), 2),
-                'safe_rate_100': round(100.0 * recent_safe / len(recent_w), 1),
-                'loss': round(avg_loss, 4),
-                'buffer_size': len(agent.memory),
-                'elapsed_sec': round(time.time() - t_train_start, 1),
-            })
+                pbar.set_postfix({
+                    'eps': f"{agent.epsilon:.2f}",
+                    'AvgRew': f"{np.mean(recent_w):.1f}",
+                    'Safe%': f"{100*recent_safe/len(recent_w):.0f}%",
+                    'Loss': f"{avg_loss:.3f}",
+                    'Mem': f"{len(agent.memory):,}",
+                })
 
-    total_train_time = time.time() - t_train_start
-    print(f"\n  [+] Training Complete in {total_train_time:.1f}s ({total_train_time/60:.2f} mins)!")
+                history_log.append({
+                    'episode': ep + 1,
+                    'epsilon': round(float(agent.epsilon), 4),
+                    'avg_reward_100': round(float(np.mean(recent_w)), 2),
+                    'safe_rate_100': round(100.0 * recent_safe / len(recent_w), 1),
+                    'loss': round(avg_loss, 4),
+                    'buffer_size': len(agent.memory),
+                    'elapsed_sec': round(time.time() - t_train_start, 1),
+                })
 
-    # Save model weights and training logs
-    model_weights_path = os.path.join(args.save_dir, 'dqn_agent_new_samples.pt')
-    agent.save(model_weights_path)
-    print(f"  [+] Saved PyTorch Model Weights to: {model_weights_path}")
+            # Checkpoint saving
+            if (ep + 1) % args.checkpoint_freq == 0:
+                ckpt_path = os.path.join(args.save_dir, f'dqn_agent_ep{ep+1}.pt')
+                agent.save(ckpt_path)
 
-    history_csv_path = os.path.join(args.save_dir, 'training_history.csv')
-    pd.DataFrame(history_log).to_csv(history_csv_path, index=False)
-    print(f"  [+] Saved Training History CSV to:   {history_csv_path}")
+        total_train_time = time.time() - t_train_start
+        print(f"\n  [+] Training Complete in {total_train_time:.1f}s ({total_train_time/60:.2f} mins)!")
+
+        # Save final model weights and training logs
+        agent.save(model_weights_path)
+        print(f"  [+] Saved PyTorch Model Weights to: {model_weights_path}")
+
+        history_csv_path = os.path.join(args.save_dir, 'training_history.csv')
+        pd.DataFrame(history_log).to_csv(history_csv_path, index=False)
+        print(f"  [+] Saved Training History CSV to:   {history_csv_path}")
+
+        # Save training configuration
+        config_dict = {
+            'pool_path': args.pool_path,
+            'episodes': args.episodes,
+            'batch_size': args.batch_size,
+            'buffer_capacity': args.buffer_capacity,
+            'lr': args.lr,
+            'gamma': args.gamma,
+            'train_scenarios': args.train_scenarios,
+            'eval_scenarios': args.eval_scenarios,
+            'train_cases': len(train_indices) * cases_per_sc,
+            'eval_cases': len(test_indices) * cases_per_sc,
+            'seed': args.seed,
+            'device': args.device,
+            'total_train_time_sec': round(total_train_time, 2),
+        }
+        with open(os.path.join(args.save_dir, 'training_config.json'), 'w') as f:
+            json.dump(config_dict, f, indent=2)
+        print(f"  [+] Saved Training Config JSON to:   {os.path.join(args.save_dir, 'training_config.json')}")
+    else:
+        print(f"\n[STAGE 3/4] Skipping Training. Loading existing model weights from: {model_weights_path}")
+        if os.path.exists(model_weights_path):
+            agent.load(model_weights_path)
+            print(f"  [+] Loaded weights from {model_weights_path}")
+        else:
+            print(f"  [!] Warning: Checkpoint not found at {model_weights_path}. Evaluating uninitialized agent.")
 
     # -------------------------------------------------------------------------
     # STAGE 4: BENCHMARK EVALUATION ON HELD-OUT TEST SCENARIOS
     # -------------------------------------------------------------------------
     if test_indices:
-        print(f"\n[STAGE 4/4] 3-Way Benchmark Evaluation on {len(test_indices)} Held-Out Test Scenarios...")
+        print(f"\n[STAGE 4/4] 3-Way Benchmark Evaluation on {len(test_indices)} Held-Out Test Scenarios ({len(test_indices)*cases_per_sc:,} cases)...")
+
+        # Initialize Security Classifier for integrated validation
+        print(f"  [+] Initializing Classifier Predictor from {args.classifier_path}...")
+        classifier = SecurityClassifierPredictor(
+            model_path=args.classifier_path,
+            scaler_path=args.scaler_path,
+            device=args.device
+        )
+        print(f"  [+] Classifier active: {classifier.is_loaded}")
+
         base_mpc, meta = load_network()
         t_eval_start = time.time()
 
@@ -225,6 +292,15 @@ def main():
         rl_matches_top3 = 0
         total_rl_load_shed = 0.0
         total_offline_load_shed = 0.0
+
+        # Remediation & Classifier Tracking
+        classifier_agrees_count = 0
+        crit_to_safe = 0
+        crit_to_alert = 0
+        alert_to_safe = 0
+        safe_preserved = 0
+        safe_broken = 0
+
         eval_cases = []
 
         eval_pbar = tqdm(test_indices, desc="  Evaluation", unit="sc")
@@ -253,6 +329,14 @@ def main():
                 res_pre = extract_results(raw_pre, conv_pre, meta=meta)
                 label_pre, _ = classify_security(res_pre, conv_pre, cfg)
 
+                # Neural Classifier Prediction on pre-action state
+                cls_label, cls_conf, _ = classifier.predict(
+                    res_pre, conv_pre, contingency_element=cont_name, total_load_mw=total_load_mw
+                )
+                cls_agrees = (cls_label == label_pre)
+                if cls_agrees:
+                    classifier_agrees_count += 1
+
                 if label_pre != 'Safe':
                     needs_action_count += 1
                 if label_pre == 'Safe':
@@ -273,6 +357,18 @@ def main():
                     rl_safe += 1
                 if rl_action >= 9:
                     total_rl_load_shed += rl_cost
+
+                # Remediation tracking
+                if label_pre == 'Critical' and rl_label == 'Safe':
+                    crit_to_safe += 1
+                elif label_pre == 'Critical' and rl_label == 'Alert':
+                    crit_to_alert += 1
+                elif label_pre == 'Alert' and rl_label == 'Safe':
+                    alert_to_safe += 1
+                elif label_pre == 'Safe' and rl_label == 'Safe':
+                    safe_preserved += 1
+                elif label_pre == 'Safe' and rl_label != 'Safe':
+                    safe_broken += 1
 
                 # 3. Offline Exhaustive Best (Oracle)
                 action_rewards = []
@@ -301,6 +397,9 @@ def main():
                     'scenario_id': sc_id,
                     'contingency': cont_name,
                     'pre_label': label_pre,
+                    'classifier_label': cls_label,
+                    'classifier_confidence': round(float(cls_conf), 3),
+                    'classifier_agrees': cls_agrees,
                     'rl_action': get_action_name(rl_action),
                     'rl_label': rl_label,
                     'rl_reward': round(float(rl_reward), 2),
@@ -312,6 +411,7 @@ def main():
 
             eval_pbar.set_postfix({
                 'RLSafe': f"{100*rl_safe/total_test:.1f}%",
+                'ClsAcc': f"{100*classifier_agrees_count/total_test:.1f}%",
                 'Top1': f"{100*rl_matches_best/total_test:.1f}%",
                 'Top3': f"{100*rl_matches_top3/total_test:.1f}%",
             })
@@ -325,6 +425,19 @@ def main():
             'rl_agent_safe_pct': round(100.0 * rl_safe / total_test, 1),
             'offline_best_safe_pct': round(100.0 * offline_safe / total_test, 1),
             'rl_mitigation_success_pct': round(100.0 * (rl_safe - no_action_safe) / max(1, needs_action_count), 1),
+            
+            # Remediation Breakdown
+            'critical_to_safe_count': crit_to_safe,
+            'critical_to_alert_count': crit_to_alert,
+            'alert_to_safe_count': alert_to_safe,
+            'safe_preserved_count': safe_preserved,
+            'safe_broken_count': safe_broken,
+
+            # Classifier Integration
+            'classifier_eval_cases': total_test,
+            'classifier_accuracy_on_eval_set': round(100.0 * classifier_agrees_count / total_test, 2),
+
+            # Policy Quality
             'policy_alignment_top1_pct': round(100.0 * rl_matches_best / total_test, 1),
             'policy_alignment_top3_pct': round(100.0 * rl_matches_top3 / total_test, 1),
             'avg_rl_load_shed_mw': round(total_rl_load_shed / total_test, 3),
@@ -340,22 +453,28 @@ def main():
         cases_csv_path = os.path.join(args.save_dir, 'evaluation_cases.csv')
         pd.DataFrame(eval_cases).to_csv(cases_csv_path, index=False)
 
-        print("\n" + "═" * 70)
-        print("  FINAL EVALUATION REPORT — NEW SAMPLES DQN POLICY")
-        print("═" * 70)
+        print("\n" + "=" * 70)
+        print("  FINAL EVALUATION REPORT: NEW SAMPLES DQN POLICY")
+        print("=" * 70)
         print(f"  Test Cases Evaluated:                {total_test}")
         print(f"  Insecure Contingencies Needing Help: {needs_action_count}")
         print(f"  1. No-Action Security Rate:          {metrics['no_action_safe_pct']}% ({no_action_safe}/{total_test})")
         print(f"  2. DQN Agent Security Rate:          {metrics['rl_agent_safe_pct']}% ({rl_safe}/{total_test})")
         print(f"  3. Offline Best (Oracle) Rate:       {metrics['offline_best_safe_pct']}% ({offline_safe}/{total_test})")
         print(f"  -------------------------------------------------------------")
+        print(f"  Classifier Accuracy on Test Set:     {metrics['classifier_accuracy_on_eval_set']}%")
+        print(f"  Critical -> Safe Remediations:       {crit_to_safe}")
+        print(f"  Critical -> Alert Remediations:      {crit_to_alert}")
+        print(f"  Alert -> Safe Remediations:          {alert_to_safe}")
+        print(f"  Safe States Preserved:               {safe_preserved}")
+        print(f"  -------------------------------------------------------------")
         print(f"  Top-1 Policy Alignment Accuracy:     {metrics['policy_alignment_top1_pct']}%")
         print(f"  Top-3 Policy Alignment Accuracy:     {metrics['policy_alignment_top3_pct']}%")
         print(f"  Avg RL Load Shed:                    {metrics['avg_rl_load_shed_mw']} MW/case")
-        print("═" * 70)
+        print("=" * 70)
         print(f"  [+] Saved evaluation summary: {summary_json_path}")
         print(f"  [+] Saved case breakdown:     {cases_csv_path}")
-        print("═" * 70 + "\n")
+        print("=" * 70 + "\n")
 
 
 if __name__ == '__main__':

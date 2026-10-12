@@ -71,3 +71,28 @@ class TestDQNAgent:
         loss = agent.train_step()
         assert loss is not None
         assert isinstance(loss, float)
+
+
+class TestClassifierIntegration:
+    def test_predictor_initialization_and_inference(self):
+        from src.rl.classifier_integration import SecurityClassifierPredictor, TOTAL_FEATURE_DIM
+        predictor = SecurityClassifierPredictor(device='cpu')
+        assert predictor.model is not None
+        results = {
+            'convergence': True,
+            'bus_voltages': [1.0] * 14,
+            'bus_angles': [0.0] * 14,
+            'line_loadings': [50.0] * 20,
+            'gen_powers': [100.0] * 5,
+            'min_voltage': 0.98,
+            'max_voltage': 1.05,
+            'max_line_loading': 75.0,
+            'total_load_mw': 259.0,
+        }
+        feat = predictor.extract_features(results, converged=True, contingency_element='1-2')
+        assert feat.shape == (TOTAL_FEATURE_DIM,)
+        label, conf, probs = predictor.predict(results, converged=True, contingency_element='1-2')
+        assert label in ('Safe', 'Alert', 'Critical')
+        assert 0.0 <= conf <= 1.0
+        assert sum(probs.values()) == pytest.approx(1.0, rel=1e-3)
+

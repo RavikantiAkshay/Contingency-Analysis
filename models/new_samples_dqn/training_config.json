@@ -1,0 +1,15 @@
+{
+  "pool_path": "data/tabular/dataset_100k/dataset_100k_pool.json",
+  "episodes": 80000,
+  "batch_size": 128,
+  "buffer_capacity": 100000,
+  "lr": 0.0005,
+  "gamma": 0.95,
+  "train_scenarios": 4000,
+  "eval_scenarios": 1000,
+  "train_cases": 80000,
+  "eval_cases": 20000,
+  "seed": 42,
+  "device": "cpu",
+  "total_train_time_sec": 3226.65
+}

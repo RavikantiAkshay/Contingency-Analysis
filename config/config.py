@@ -44,10 +44,9 @@ def get_config() -> Dict[str, Any]:
         'paths': {
             'data_dir': 'data',
             'tabular_dir': os.path.join('data', 'tabular'),
-            'tabular_master': os.path.join('data', 'tabular', 'master'),
-            'tabular_base_cases': os.path.join('data', 'tabular', 'base_cases'),
-            'processed': os.path.join('data', 'tabular', 'master'),
-            'ml_ready': os.path.join('data', 'ml_ready'),
+            'dataset_100k': os.path.join('data', 'tabular', 'dataset_100k'),
+            'dataset_200k': os.path.join('data', 'tabular', 'dataset_200k'),
+            'dataset_300k': os.path.join('data', 'tabular', 'dataset_300k'),
             'models': 'models',
             'logs': 'logs',
         },

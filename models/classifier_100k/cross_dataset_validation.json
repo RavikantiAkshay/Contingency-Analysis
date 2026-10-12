@@ -1,0 +1,20 @@
+{
+  "dataset_200k": {
+    "dataset_path": "data/tabular/dataset_200k/dataset_200k.csv",
+    "evaluated_samples": 10000,
+    "accuracy_pct": 98.26,
+    "macro_f1_pct": 98.17,
+    "macro_precision_pct": 98.34,
+    "macro_recall_pct": 98.05,
+    "evaluation_seconds": 0.36
+  },
+  "dataset_300k": {
+    "dataset_path": "data/tabular/dataset_300k/dataset_300k.csv",
+    "evaluated_samples": 10000,
+    "accuracy_pct": 98.17,
+    "macro_f1_pct": 98.07,
+    "macro_precision_pct": 98.26,
+    "macro_recall_pct": 97.92,
+    "evaluation_seconds": 0.29
+  }
+}
