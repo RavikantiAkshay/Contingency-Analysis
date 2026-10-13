@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Power Grid AI Pipeline & Neural Network Architecture Guide</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --accent: #818cf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --code-bg: #090d16;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      padding: 30px 20px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 40px;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 35px 0 18px 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h2 .badge {
+      font-size: 0.8rem;
+      background: var(--accent);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      color: var(--primary);
+      margin: 22px 0 10px 0;
+    }
+
+    p {
+      color: var(--text);
+      margin-bottom: 16px;
+      font-size: 1.05rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+    }
+
+    .card.highlight {
+      border-left: 4px solid var(--primary);
+    }
+
+    .card.warning {
+      border-left: 4px solid var(--warning);
+    }
+
+    .card.success {
+      border-left: 4px solid var(--success);
+    }
+
+    /* Architecture Visualizer */
+    .nn-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 25px 0;
+    }
+
+    .nn-block {
+      background: #131c2e;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 16px;
+      flex: 1;
+      min-width: 190px;
+      text-align: center;
+      position: relative;
+    }
+
+    .nn-block .title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .nn-block .dimension {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin: 6px 0;
+    }
+
+    .nn-block .details {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .arrow {
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+
+    /* Comparison Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      text-align: left;
+    }
+
+    th {
+      background: #131c2e;
+      color: var(--primary);
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-bottom: 2px solid var(--card-border);
+    }
+
+    td {
+      background: rgba(30, 41, 59, 0.6);
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.98rem;
+    }
+
+    tr:hover td {
+      background: rgba(40, 54, 78, 0.7);
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .tag-safe { background: rgba(52, 211, 153, 0.2); color: var(--success); }
+    .tag-alert { background: rgba(251, 191, 36, 0.2); color: var(--warning); }
+    .tag-critical { background: rgba(248, 113, 113, 0.2); color: var(--danger); }
+    .tag-blue { background: rgba(56, 189, 248, 0.2); color: var(--primary); }
+
+    ul, ol {
+      margin-left: 24px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    li strong {
+      color: #ffffff;
+    }
+
+    .flow-step {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      background: rgba(15, 23, 42, 0.5);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+    }
+
+    .step-number {
+      background: var(--primary);
+      color: #0f172a;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .step-content h4 {
+      font-size: 1.05rem;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+
+    .step-content p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    .footer {
+      text-align: center;
+      padding-top: 30px;
+      margin-top: 50px;
+      border-top: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Autonomous Grid Contingency Remediation</h1>
+    <div class="subtitle">Complete Architecture, Data Flow, Neural Layers & Contingency Ranking Guide</div>
+  </header>
+
+  <!-- SECTION 1: END TO END PIPELINE -->
+  <section>
+    <h2><span class="badge">Part 1</span> End-to-End Pipeline: From Data to Action</h2>
+    
+    <div class="card highlight">
+      <p>The system operates in a closed autonomous loop. It senses a power grid outage, classifies whether the system is in danger, and uses an intelligent Reinforcement Learning Agent to automatically re-balance the grid without human intervention.</p>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">1</div>
+      <div class="step-content">
+        <h4>Base Network Ingestion</h4>
+        <p>Loads the standard IEEE 14-bus transmission system (14 electrical substations, 20 high-voltage transmission lines and transformers, 5 power generators). Nominal system power is 100 Megawatts (base MVA) and 144 Kilovolts.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">2</div>
+      <div class="step-content">
+        <h4>Scenario & Load Generation</h4>
+        <p>In the real world, electricity usage fluctuates constantly. The pipeline creates thousands of non-repeating scenarios by randomly scaling loads across 11 load substations between 80% and 120% of their normal demand.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">3</div>
+      <div class="step-content">
+        <h4>N-1 Contingency Injection</h4>
+        <p>For every load scenario, the system simulates an "N-1 contingency" (a sudden trip or failure of 1 branch at a time across all 20 lines, simulating storm damage, lightning strikes, or line faults).</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">4</div>
+      <div class="step-content">
+        <h4>AC Newton-Raphson Physics Solver</h4>
+        <p>Solves non-linear AC power flow equations (Kirchhoff's Current Law and complex power balance). If the power flow converges, it calculates the exact voltage magnitude at all 14 buses, phase angles, and electrical power flow on every transmission line. If the grid is so badly broken that power cannot physically flow, the solver flags "Non-convergence".</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">5</div>
+      <div class="step-content">
+        <h4>Feature Extraction & Dual Security Classification</h4>
+        <p>Results are packaged into a structured 63-column feature row. The state is then evaluated two ways:
+          <br>• <strong>Physics Ground Truth:</strong> Compares numbers to industry grid limits (Voltages between 0.95 and 1.10 per-unit, Line loading under 100%).
+          <br>• <strong>Deep Neural Classifier:</strong> Uses a 3-layer neural network (79 inputs) to predict if the state is Safe, Alert, or Critical in under 1 millisecond.
+        </p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">6</div>
+      <div class="step-content">
+        <h4>DQN Corrective Action Dispatch</h4>
+        <p>If the grid is Alert or Critical, the 77-dimensional grid state is fed into the Deep Q-Network Agent. The agent chooses the best physical corrective action (adjusting generator outputs or cutting 10% load at a stressed bus).</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-number">7</div>
+      <div class="step-content">
+        <h4>Post-Remediation Verification</h4>
+        <p>The action is physically applied to the grid, the AC power flow is re-solved, and the new state is measured. The agent receives a reward or penalty based on whether the grid returned to a Safe operating state.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: DEEP DIVE INTO 77 -> 256 -> 256 -> 20 -->
+  <section>
+    <h2><span class="badge">Part 2</span> Neural Network Deep Dive: What Do the Layers Mean?</h2>
+
+    <div class="card">
+      <h3>The DQN Architecture: 77 inputs → 256 neurons → 256 neurons → 20 outputs</h3>
+      <p>People often write <code>77 → 256 → 256 → 20</code>, but what is physically happening inside the computer? Here is the exact breakdown:</p>
+      
+      <div class="nn-flow">
+        <div class="nn-block">
+          <div class="title">Input Vector</div>
+          <div class="dimension">77</div>
+          <div class="details">Raw Grid Measurements</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="nn-block">
+          <div class="title">Hidden Layer 1</div>
+          <div class="dimension">256</div>
+          <div class="details">Electrical Pattern Detectors</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="nn-block">
+          <div class="title">Hidden Layer 2</div>
+          <div class="dimension">256</div>
+          <div class="details">Severity & Synergy Evaluators</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="nn-block">
+          <div class="title">Output Layer</div>
+          <div class="dimension">20</div>
+          <div class="details">Action Value Scores (Q-values)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>1. What are the 77 Input Numbers?</h3>
+      <p>The input vector is a continuous 77-dimensional numerical snapshot of the electrical state:</p>
+      <ul>
+        <li><strong>Indices 0 to 13 (14 numbers):</strong> Bus voltage magnitudes at all 14 substations (nominal is 1.00 per-unit).</li>
+        <li><strong>Indices 14 to 27 (14 numbers):</strong> Bus voltage phase angles in degrees, divided by 30 to keep them in a clean -1 to +1 range.</li>
+        <li><strong>Indices 28 to 47 (20 numbers):</strong> Transmission line loadings in percentage (e.g. 85% = 0.85). If a line is at 150%, it reads 1.50.</li>
+        <li><strong>Indices 48 to 52 (5 numbers):</strong> Generator active power outputs in Megawatts divided by 100.</li>
+        <li><strong>Indices 53 to 72 (20 numbers):</strong> A one-hot outage mask. A list of 20 zeros, with a 1.0 placed exactly at the index of the line that failed.</li>
+        <li><strong>Indices 73 to 76 (4 numbers):</strong> Global summary metrics: Minimum voltage, Maximum voltage, Peak line loading, and Total system load.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>2. What is Layer 1 (77 → 256)?</h3>
+      <p>This is a <strong>Fully Connected (Linear) layer</strong> containing <strong>256 artificial neurons</strong>.</p>
+      <p>Each single neuron has 77 adjustable dials (weights) plus 1 bias number. That means this layer has <code>(77 × 256) + 256 = 19,968 trainable parameters</code>.</p>
+      <p><strong>What do these 256 neurons learn to do?</strong></p>
+      <ul>
+        <li>Neuron #1 might activate strongly when <em>"Line 1-2 tripped while Bus 4 voltage is under 0.92"</em>.</li>
+        <li>Neuron #42 might activate when <em>"Generator at Bus 2 is maxed out and line 5-6 is over 115% loading"</em>.</li>
+        <li>Neuron #180 might detect <em>"Everything is normal and voltages are balanced"</em>.</li>
+      </ul>
+      <p><strong>LayerNorm & ReLU:</strong>
+        <br>• <strong>Layer Normalization</strong> stabilizes the 256 outputs so they don't explode to huge numbers or shrink to zero.
+        <br>• <strong>ReLU (Rectified Linear Unit)</strong> introduces non-linearity. It says: <em>if the neuron signal is negative, turn it off (0). If positive, let it pass.</em> Without ReLU, a neural network is just a basic linear regression that could never learn complex power grid interactions!
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>3. What is Layer 2 (256 → 256)?</h3>
+      <p>This is a second layer of 256 neurons connecting to the first layer. It contains <code>(256 × 256) + 256 = 65,792 trainable parameters</code>.</p>
+      <p>Instead of looking at raw voltages and line currents, Layer 2 combines the high-level concepts from Layer 1. For example, it combines <em>"severe overload on branch 2-4"</em> with <em>"generator 3 has surplus capacity available"</em>. It synthesizes the full picture of grid distress.</p>
+    </div>
+
+    <div class="card">
+      <h3>4. What is the Output Layer (256 → 20)?</h3>
+      <p>This final linear layer compresses the 256 internal features down into exactly <strong>20 numbers</strong>.</p>
+      <p>Each output number corresponds to one specific physical action available to the agent:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Action Index</th>
+            <th>Type</th>
+            <th>Description & Physical Effect</th>
+            <th>Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Action 0</strong></td>
+            <td><span class="tag tag-safe">Do Nothing</span></td>
+            <td>Grid is safe or no intervention is needed. Leaves settings unchanged.</td>
+            <td>0.0</td>
+          </tr>
+          <tr>
+            <td><strong>Actions 1 to 8</strong></td>
+            <td><span class="tag tag-blue">Redispatch</span></td>
+            <td>Adjust power output by +10 MW or -10 MW on 4 controllable generators (Buses 2, 3, 6, 8). Re-routes power without cutting electricity to customers.</td>
+            <td>Flat 2.0</td>
+          </tr>
+          <tr>
+            <td><strong>Actions 9 to 19</strong></td>
+            <td><span class="tag tag-alert">Load Shedding</span></td>
+            <td>Emergency measure: cut 10% of electrical demand at one of the 11 load buses (Buses 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14) to prevent blackout.</td>
+            <td>1.0 per MW</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><strong>What does the number output by the network mean?</strong></p>
+      <p>These 20 numbers are <strong>Q-values</strong> (Quality values). A Q-value is the expected total cumulative reward the agent will achieve if it executes that action. If Action 3 has a Q-value of <strong>+48.2</strong> and Action 0 has a Q-value of <strong>-15.0</strong>, the agent knows that Action 3 will save the grid, while doing nothing will result in voltage collapse and penalties!</p>
+    </div>
+  </section>
+
+  <!-- SECTION 3: TRAINING TIME VS TESTING TIME -->
+  <section>
+    <h2><span class="badge">Part 3</span> Execution Flow: Training Time vs. Testing Time</h2>
+
+    <div class="card highlight">
+      <p>A major point of confusion in Reinforcement Learning is what happens while the agent is learning (Training) versus when it is evaluated in a real-world test (Testing/Inference). Here is the exact side-by-side comparison:</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+      <!-- Training Column -->
+      <div class="card" style="border-top: 4px solid var(--warning);">
+        <h3 style="color: var(--warning);">Training Time Flow (80,000 Episodes)</h3>
+        <ol>
+          <li><strong>Epsilon-Greedy Exploration:</strong>
+            <br>The agent starts completely clueless. With probability Epsilon (starts at 100%), it picks a <em>completely random action</em> to explore what happens. As training continues, Epsilon gradually decays down to 5%.
+          </li>
+          <li><strong>Simulate & Reward:</strong>
+            <br>The action is sent to the power flow solver. The reward function calculates a score:
+            <br>• +50 if the grid becomes Safe.
+            <br>• -100 if the grid collapses.
+            <br>• Penalties for high voltage deviations and line overloads.
+          </li>
+          <li><strong>Experience Replay Buffer:</strong>
+            <br>The transition tuple: <code>(State, Action, Reward, Next State, Done)</code> is stored into a 100,000-memory bank.
+          </li>
+          <li><strong>Mini-Batch Gradient Descent (GPU):</strong>
+            <br>Every step, the agent grabs a random batch of <strong>128 past memories</strong> from the buffer and sends them to the GPU.
+          </li>
+          <li><strong>Bellman Error & Backpropagation:</strong>
+            <br>It calculates the target value using a separate <strong>Target Network</strong>:
+            <br><code>Target = Reward + 0.95 × max(Next State Q-values)</code>
+            <br>The loss (difference between current guess and target) is computed, and the Adam optimizer updates all neural network weights.
+          </li>
+          <li><strong>Target Synchronization:</strong>
+            <br>Every 200 steps, the Target Network copies the Policy Network weights to keep learning stable.
+          </li>
+        </ol>
+      </div>
+
+      <!-- Testing Column -->
+      <div class="card" style="border-top: 4px solid var(--success);">
+        <h3 style="color: var(--success);">Testing / Inference Flow (20,000 Test Cases)</h3>
+        <ol>
+          <li><strong>Zero Exploration (Epsilon = 0):</strong>
+            <br>Exploration is completely turned off. The agent is in pure deployment mode. No random guesses are ever taken.
+          </li>
+          <li><strong>Replay Buffer & Target Network Disabled:</strong>
+            <br>No memories are stored, no gradients are calculated, and no weights change. The network is frozen in evaluation mode.
+          </li>
+          <li><strong>Fast Forward Pass:</strong>
+            <br>The 77-dimensional state is passed through the Policy Network. The network outputs the 20 Q-values in under 1 millisecond.
+          </li>
+          <li><strong>Greedy Action Selection:</strong>
+            <br>The agent picks the action with the single highest Q-value:
+            <br><code>Selected Action = argmax(Q-values)</code>
+          </li>
+          <li><strong>Action Execution & Benchmark:</strong>
+            <br>The chosen action is applied to the power system. We measure:
+            <br>• Did the action convert a Critical grid to Safe?
+            <br>• Did it preserve already safe states?
+            <br>• How does it compare to the theoretical Oracle (Offline Best Exhaustive Search)?
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 4: CONTINGENCY RANKING -->
+  <section>
+    <h2><span class="badge">Part 4</span> Contingency Ranking: What is it, and How Will We Use It?</h2>
+
+    <div class="card">
+      <h3>The Real-World Problem: Emergency Room Triage</h3>
+      <p>Imagine an emergency hospital room during a disaster. If 20 patients arrive at once, a doctor cannot spend 2 hours performing full surgery on patient #1 if patient #1 only has a minor scratch, while patient #5 is suffering severe cardiac arrest.</p>
+      <p>The hospital does <strong>triage</strong>: nurses quickly assign a severity score (critical, urgent, minor) and rank patients so the most life-threatening cases are treated first.</p>
+      <p><strong>Contingency Ranking</strong> is the exact same triage system for the electrical power grid:</p>
+      <ul>
+        <li>In an interconnected grid with hundreds of lines, <strong>most outages are benign</strong> (voltage drops by only 0.01 per-unit, lines stay at 50% capacity).</li>
+        <li>A small number of outages are <strong>catastrophic</strong> (lines carrying heavy corridor power suddenly trip, cascading overload to neighboring lines at 220% capacity or plunging voltage to 0.75 per-unit).</li>
+        <li><strong>Contingency Ranking</strong> computes an analytical <strong>Severity Index</strong> for every possible outage and ranks them from <strong>Rank 1 (Most Dangerous)</strong> down to <strong>Rank 20 (Safest)</strong>.</li>
+      </ul>
+    </div>
+
+    <div class="card highlight">
+      <h3>The Two Classic Severity Indices</h3>
+      <p>Power engineers use two mathematical indices to score outages:</p>
+      
+      <h4>1. Voltage Severity Index (PI_V)</h4>
+      <p>Measures how far bus voltages deviate from the safe boundary (0.95 to 1.10 per-unit). If a bus voltage stays at 1.02, deviation is 0. If it falls to 0.80 (very dangerous), the squared penalty is huge.</p>
+      <p><em>Plain Formula:</em> For every substation, if voltage is outside the safe band, add <code>(deviation / allowed_range)^2</code> to the score.</p>
+
+      <h4>2. Thermal Overload Severity Index (PI_MW)</h4>
+      <p>Measures how severely transmission lines are overloaded beyond their 100% capacity rating.</p>
+      <p><em>Plain Formula:</em> For every branch, take <code>(actual line loading / maximum rated loading)^4</code>. Notice the power of 4:
+        <br>• If a line is at 80% (0.8): <code>0.8^4 = 0.40</code> (low score).
+        <br>• If a line is at 140% (1.4): <code>1.4^4 = 3.84</code> (high score).
+        <br>• If a line is at 240% (2.4): <code>2.4^4 = 33.17</code> (exponentially massive score!).
+      </p>
+
+      <h4>3. Composite Severity Index (CSI)</h4>
+      <p><code>Composite Severity = (Voltage Score) + (Thermal Score) + (Non-convergence Penalty)</code></p>
+      <p>If an outage causes power flow divergence (numerical collapse), it automatically receives a massive penalty of 10,000, immediately shooting to <strong>Rank 1 (Most Critical)</strong>.</p>
+    </div>
+
+    <div class="card success">
+      <h3>How We Will Use It in Our Project (Action Plan)</h3>
+      <p>Here is how this adds value to your project and thesis:</p>
+      <ol>
+        <li><strong>Intelligent Agent Prioritization:</strong> When multiple contingencies occur or during real-time surveillance, the control system computes the ranking and feeds the Rank 1, 2, and 3 contingencies to the DQN agent first.</li>
+        <li><strong>Fast Screening Filter:</strong> Instead of running heavy simulations on all 20 lines, the system can instantly discard safe lines (Rank 10 to 20) and only run the Neural Classifier and RL Agent on top-ranked lines.</li>
+        <li><strong>Curriculum Learning:</strong> During training, we can train the RL agent on the toughest contingencies first, accelerating learning efficiency.</li>
+        <li><strong>Academic Presentation for Your Professor:</strong> Professors appreciate when classical power engineering methods (Severity Indices) are paired with modern Artificial Intelligence (Deep RL). It bridges established electrical engineering standards with modern machine learning.</li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="footer">
+    EEQ401 Power System Contingency Analysis & Autonomous AI Remediation Engine
+  </div>
+</div>
+
+</body>
+</html>
